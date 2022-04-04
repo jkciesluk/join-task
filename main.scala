@@ -4,50 +4,34 @@ import scala.collection.mutable.PriorityQueue
 // First I will sort both files using columin we are pertforming join on
 
 object Join {
-  def innerJoin(sortedFile1: File, sortedFile2: File, column1: Int, column2: Int, h1l: Int, h2l: Int, joinMode: String) = {
-    var (n, size) = (0,0)
-    var current: String = ""
-    val iterf1 = Source.fromFile(sortedFile1).getLines().map(Sort.toArr(_))
-    var cont: Boolean = true
-    for(second <- Source.fromFile(sortedFile1).getLines()) println("1." + second)
-    for(second <- Source.fromFile(sortedFile2).getLines()) println("2." +second )
-    while(iterf1.hasNext) {
-      var line1 = iterf1.next()
-      // println(line1.mkString(","))
-      if (line1(column1).equals(current)) {
-        for(second <- Source.fromFile(sortedFile2).getLines().drop(n).take(size)) {
-          println(line1.mkString(",") + ',' + second)
+
+  def join(iter1: Iterator[Array[String]], file2: File, columnIndex1: Int, columnIndex2: Int, n: Int):Unit = {
+    if (iter1.hasNext) {
+      var size = 0
+      val line1 = iter1.next()
+      val iter2 = Source.fromFile(file2).getLines().map(_.split(',')).drop(n)
+      if(iter2.hasNext) {
+        var line2 = iter2.next()
+        while(line1(columnIndex1).equals(line2(columnIndex2)) && iter2.hasNext) {
+          println((line1++line2).mkString(","))
+          line2=iter2.next()
+          size += 1
+        }
+        if(line1(columnIndex1) < line2(columnIndex2)) {
+          join(iter1, file2, columnIndex1, columnIndex2, n)
+        }
+        else {
+          join(Iterator[Array[String]](line1) ++ iter1, file2, columnIndex1, columnIndex2, n+1)
         }
       }
       else {
-        n += size
-        size = 0
-        var other = Source.fromFile(sortedFile2).getLines().drop(n)
-        cont = true
-        while(other.hasNext && cont == true) {
-          var line2 = other.next().split(',')
-          // println(line2.mkString(","))
 
-          if(line1(column1).equals(line2(column2))) {
-            println((line1++line2).mkString(","))
-            size += 1
-          }
-          else if(line1(column1) > line2(column2)){ 
-            n += 1
-            size = 0
-            if(joinMode == "right") {
-              println("," * h1l + line2.mkString(","))
-            }
-          }
-          else {
-            cont = false
-          }
-        }
       }
-      if(size == 0 && joinMode == "left") println(line1.mkString(",") + "," * h2l) 
     }
   }
 }
+
+
 
 
 
@@ -144,12 +128,12 @@ object KMerge {
 
 object Main {
   def main(args: Array[String]) = {
-    val f1 = "file1.csv"
-    val f2 = "file2.csv"
-    val column = "age"
-    val mode = "left"
-    val sorted1 = Sort.createSortedFile(f1, column)
-    val sorted2 = Sort.createSortedFile(f2, column)
-    Join.innerJoin(sorted1, sorted2, 0, 1, 2, 2, mode)
+    // val f1 = "file1.csv"
+    // val f2 = "file2.csv"
+    // val column = "age"
+    // val mode = "left"
+    // val sorted1 = Sort.createSortedFile(f1, column)
+    // val sorted2 = Sort.createSortedFile(f2, column)
+    // Join.join(Source.fromFile(sorted1).getLines().map(_.split(',')), sorted2, 0, 1, 0)
   }
 }
