@@ -1,9 +1,6 @@
 import scala.io.Source
 import java.io.{File, BufferedWriter, FileWriter}
 import scala.collection.mutable.PriorityQueue
-// First I will sort both files using columin we are pertforming join on
-
-
 
 object Join {
   /** Creates iterator from file
@@ -24,26 +21,33 @@ object Join {
     * @param file1 - name of the first file
     * @param file2 - name of the second file
     * @param column - name of column to join on
-    * @param mode - type of join: 0 - inner, 1 - left, 2 - right
+    * @param mode - type of join: 0 - inner (default), 1 - left, 2 - right
   */  
-  def join(file1: String, file2: String, column: String, mode: Int): Unit = {
+  def join(file1: String, file2: String, column: String, mode: Int = 0): Unit = {
     val f1 = new File(file1)
     val f2 = new File(file2)
+    // First, I check if both file exist
     if(f1.exists && f2.exists) {
+      // I create iterators and extract headers and index of column to join on
       val iter1 = getIterator(file1)
       val iter2 = getIterator(file2)
       val header1 = iter1.next()
       val header2 = iter2.next()
       val columnIndex1 = getColumnIndex(header1, column)
       val columnIndex2 = getColumnIndex(header2, column)
+      // I check if both files have this column
       if(columnIndex1 < 0 || columnIndex2 < 0) println("Invalid column name")
       else {
+        // I sort both files using external merge sort
         val sorted1 = Sort.createSortedFile(iter1, file1, columnIndex1)
         val sorted2 = Sort.createSortedFile(iter2, file2, columnIndex2)
-        println(header1.map(file1+"."+_).mkString(",")+","+header2.map(file2+"."+_).mkString(","))
+        // print connected header with new column names, I decided to not delete column used of join from the second file
+        println(header1.map(_ + "1").mkString(",")+","+header2.map(_ + "2").mkString(","))
         mode match {
+          // case for inner or left
           case a if mode < 2 => 
             joinMaker(columnIndex1,columnIndex2, header1.length, header2.length, mode)(Source.fromFile(sorted1).getLines().map(_.split(',')), sorted2, 0)
+          // case for right, here we swap the files
           case b => 
             joinMaker(columnIndex2,columnIndex1, header1.length, header2.length, mode)(Source.fromFile(sorted2).getLines().map(_.split(',')), sorted1, 0)
         }
@@ -58,17 +62,23 @@ object Join {
   def joinMaker(columnIndex1: Int, columnIndex2: Int, hl1: Int, hl2: Int, mode: Int)(iter1: Iterator[Array[String]], file2: File, n: Int):Unit = {
     def fun(iter1: Iterator[Array[String]], file2: File, n: Int): Unit = {
       if (iter1.hasNext) {
-        var matched = false      
-        val line1 = iter1.next()
+        var matched = false     //used in left and right join to check if each row is present in result
+        //we iterate first file line by line 
+        val line1 = iter1.next()  
+        // for each line we have to create new iterator in second file, but we can drop first n lines, knowing that the file is sorted
         val iter2 = Source.fromFile(file2).getLines().map(_.split(',')).drop(n)
         if(iter2.hasNext) {
           var line2 = iter2.next()
+          //while the lines are matching on given column, we join them and print them
           while(line1(columnIndex1).equals(line2(columnIndex2)) && iter2.hasNext) {
             if(mode < 2) println((line1++line2).mkString(","))
             else println((line2++line1).mkString(","))
             line2=iter2.next()
+            // we also set the matched flag to true
             matched = true
           }
+          // if line2(columnIndex2) is bigger than line1(columnIndex1), then we won't find any more matches for line1
+          // if mode is left/right we print and matched==false, we print the result like in outer join
           if(line1(columnIndex1) < line2(columnIndex2)) {
             if(matched==false)  {
               mode match {
@@ -77,12 +87,16 @@ object Join {
                 case 2 => println(","*hl1 + line1.mkString(","))
               }
             }
+            // we run the function recursively with next line from file 1, but the same state of file2 (number of lines to drop)
             fun(iter1, file2, n)
           }
+          // case if line1(columnIndex1) > line2(columnIndex2), so we can still find matches for line1 if file2
           else {
+            // we run the function recursively with the same iterator(prepending line1 to iter1) and increased n, so iter2 will start 1 line further
             fun(Iterator[Array[String]](line1) ++ iter1, file2, n+1)
           }
         }
+        // if mode was left/right and one file has ended, we print remaining lines from the second one
         else {
           mode match {
             case 0 => ()
@@ -152,6 +166,7 @@ object Sort {
   */
   def kMerge(iterators: List[Iterator[Array[String]]], columnIndex: Int): Iterator[Array[String]] = {
     val ordering: Ordering[(Array[String], Iterator[Array[String]])] = 
+      // we create ordering for priority queue, minimum element of heads of sorted iterators, so minimum element of all rows will be first
       Ordering.by((pair:(Array[String], Iterator[Array[String]])) => pair._1(columnIndex)).reverse
     KMerge.merge(KMerge.createQueue(iterators, ordering))
   }
@@ -165,8 +180,8 @@ object Sort {
     * @param size - size of chunk, default=1000000
     * @return Sorted temporary file
   */
-  def createSortedFile(iter: Iterator[Array[String]], file: String, columnIndex: Int, size: Int = 1000000): File = {
-    val chunks = iter.grouped(1000000)
+  def createSortedFile(iter: Iterator[Array[String]], file: String, columnIndex: Int, size: Int = 1000): File = {
+    val chunks = iter.grouped(size)
     val tempFiles: List[File] = sortAndWrite(chunks, columnIndex, file)
     if(tempFiles.length == 1) (tempFiles.head)
     else {
@@ -207,6 +222,8 @@ object KMerge {
     * @return Single sorted iterator
   */
   def merge(queue: PriorityQueue[(Array[String], Iterator[Array[String]])]): Iterator[Array[String]] = {
+    // We create sorted iterator, which in each next() dequeues minimal element and rest of the iterator it was taken from
+    // we return this minimal element and if the iterator isn't empty, add it back to the queue
     new Iterator[Array[String]] {
       val q = queue
       def hasNext = queue.nonEmpty
