@@ -6,18 +6,36 @@ import scala.collection.mutable.PriorityQueue
 
 
 object Join {
-
+  def getIterator(file: String): Iterator[Array[String]] = Source.fromFile(file).getLines().map(_.split(','))
+  def getColumnIndex(header: Array[String], column: String): Int = 
+    header.indexOf(column)
+  
   def join(file1: String, file2: String, column: String, mode: Int): Unit = {
-    val (header1, columnIndex1, sorted1) = Sort.createSortedFile(file1, column)
-    val (header2, columnIndex2, sorted2) = Sort.createSortedFile(file2, column)
-    println(header1.mkString(",")+","+header2.mkString(","))
-    mode match {
-      case a if mode < 2 => 
-        joinMaker(columnIndex1,columnIndex2, header1.length, header2.length, mode)(Source.fromFile(sorted1).getLines().map(_.split(',')), sorted2, 0)
-      case b => 
-        joinMaker(columnIndex2,columnIndex1, header1.length, header2.length, mode)(Source.fromFile(sorted2).getLines().map(_.split(',')), sorted1, 0)
+    val f1 = new File(file1)
+    val f2 = new File(file2)
+    if(f1.exists && f2.exists) {
+      val iter1 = getIterator(file1)
+      val iter2 = getIterator(file2)
+      val header1 = iter1.next()
+      val header2 = iter2.next()
+      val columnIndex1 = getColumnIndex(header1, column)
+      val columnIndex2 = getColumnIndex(header2, column)
+      if(columnIndex1 < 0 || columnIndex2 < 0) println("Invalid column name")
+      else {
+        val sorted1 = Sort.createSortedFile(iter1, file1, columnIndex1)
+        val sorted2 = Sort.createSortedFile(iter2, file2, columnIndex2)
+        println(header1.map(file1+"."+_).mkString(",")+","+header2.map(file2+"."+_).mkString(","))
+        mode match {
+          case a if mode < 2 => 
+            joinMaker(columnIndex1,columnIndex2, header1.length, header2.length, mode)(Source.fromFile(sorted1).getLines().map(_.split(',')), sorted2, 0)
+          case b => 
+            joinMaker(columnIndex2,columnIndex1, header1.length, header2.length, mode)(Source.fromFile(sorted2).getLines().map(_.split(',')), sorted1, 0)
+        }
+      }
     }
+    else { println("File does not exist")}
   }
+
   def joinMaker(columnIndex1: Int, columnIndex2: Int, hl1: Int, hl2: Int, mode: Int)(iter1: Iterator[Array[String]], file2: File, n: Int):Unit = {
     def fun(iter1: Iterator[Array[String]], file2: File, n: Int): Unit = {
       if (iter1.hasNext) {
@@ -60,23 +78,7 @@ object Join {
   }
 }
 
-
-
-
-
-
 object Sort {
-  //returns iterator of chunks, with 1000 rows each
-  def toRow(arr: Array[String]): String = arr.mkString(",") + '\n'
-  def toArr(row: String): Array[String] = row.split(',')
-  def getIterator(file: String, size: Int = 1000000): (Array[String], Iterator[Seq[Array[String]]]) = {
-    val iter = Source.fromFile(file).getLines().map(toArr(_))
-    (iter.next(), iter.grouped(size))
-  }
-  
-  def getColumnIndex(header: Array[String], column: String): Int = 
-    header.indexOf(column)
-  
   def sortChunk(chunk: List[Array[String]], column: Int): List[Array[String]] =
     chunk.sortBy(_(column))
 
@@ -95,14 +97,14 @@ object Sort {
     val tempFiles = for {
       (chunk, n) <- chunks.zipWithIndex
       sorted: List[Array[String]] = sortChunk(chunk.toList, columnIndex)
-      lines: List[String] = sorted.map(toRow(_))
+      lines: List[String] = sorted.map(_.mkString(",") + "\n")
       
     } yield  writeToTempFile(lines, file + n.toString)
     tempFiles.toList
   }
 
   def mergeIterators(files: List[File]): List[Iterator[Array[String]]] = 
-    files.map(Source.fromFile(_).getLines().map(toArr(_))).filter(_.nonEmpty)
+    files.map(Source.fromFile(_).getLines().map(_.split(','))).filter(_.nonEmpty)
   
   def kMerge(iterators: List[Iterator[Array[String]]], columnIndex: Int): Iterator[Array[String]] = {
     val ordering: Ordering[(Array[String], Iterator[Array[String]])] = 
@@ -110,23 +112,22 @@ object Sort {
     KMerge.merge(KMerge.createQueue(iterators, ordering))
   }
 
-  def createSortedFile(file: String, column: String): (Array[String], Int , File) = {
-    val (header, chunks) = getIterator(file)
-    val columnIndex: Int = getColumnIndex(header, column)
+  def createSortedFile(iter: Iterator[Array[String]], file: String, columnIndex: Int, size: Int = 1000000): File = {
+    val chunks = iter.grouped(1000000)
     val tempFiles: List[File] = sortAndWrite(chunks, columnIndex, file)
-    if(tempFiles.length == 1) (header, columnIndex, tempFiles.head)
+    if(tempFiles.length == 1) (tempFiles.head)
     else {
       val sorted = kMerge(mergeIterators(tempFiles), columnIndex)
       
       val sortedFile = File.createTempFile(s"sorted$file", ".tmp")
       sortedFile.deleteOnExit()
       val bw = new BufferedWriter(new FileWriter(sortedFile))
-      for (line <- sorted.map(toRow(_))) {
+      for (line <- sorted.map(_.mkString(",") + "\n")) {
         bw.write(line)
       }
       bw.close()
       tempFiles.map(_.delete())
-      (header, columnIndex, sortedFile)
+      sortedFile
     }
   }
 }
@@ -137,7 +138,6 @@ object KMerge {
                   ): PriorityQueue[(Array[String], Iterator[Array[String]])] = {
 
     val heap: PriorityQueue[(Array[String], Iterator[Array[String]])] = PriorityQueue()(ordering)
-    val nonEmpty = iterators.filter(_.nonEmpty)
     for {
       iterator <- iterators
       head = iterator.next()
@@ -160,6 +160,17 @@ object KMerge {
 
 object Main {
   def main(args: Array[String]) = {
-    Join.join("file1.csv", "file2.csv", "age", 0)
+    if(args.length < 3) println("Not enough arguments")
+    else if (args.length == 3) 
+      Join.join(args(0), args(1), args(2), 0)
+    else {
+      val mode = args(3).toLowerCase()
+      mode match {
+        case "inner" => Join.join(args(0), args(1), args(2), 0)
+        case "left"  => Join.join(args(0), args(1), args(2), 1)
+        case "right" => Join.join(args(0), args(1), args(2), 2)
+        case _ => println("Invalid join mode")
+      }
+    }
   }
 }
