@@ -7,7 +7,8 @@ object Join {
     * @param file - name of file
     * @return Iterator of lines as arrays of strings
   */
-  def getIterator(file: String): Iterator[Array[String]] = Source.fromFile(file).getLines().map(_.split(','))
+  // I added the come at the end, if the last column is empty in some rows
+  def getIterator(file: File): Iterator[Array[String]] = Source.fromFile(file).getLines().map(_.split(',')) 
   
   /** Index of column to join on
     * @param header - header from file
@@ -29,8 +30,8 @@ object Join {
     // First, I check if both file exist
     if(f1.exists && f2.exists) {
       // I create iterators and extract headers and index of column to join on
-      val iter1 = getIterator(file1)
-      val iter2 = getIterator(file2)
+      val iter1 = getIterator(f1)
+      val iter2 = getIterator(f2)
       val header1 = iter1.next()
       val header2 = iter2.next()
       val columnIndex1 = getColumnIndex(header1, column)
@@ -46,10 +47,10 @@ object Join {
         mode match {
           // case for inner or left
           case a if mode < 2 => 
-            joinMaker(columnIndex1,columnIndex2, header1.length, header2.length, mode)(Source.fromFile(sorted1).getLines().map(_.split(',')), sorted2, 0)
+            joinMaker(columnIndex1,columnIndex2, header1.length, header2.length, mode)(getIterator(sorted1), sorted2, 0)
           // case for right, here we swap the files
           case b => 
-            joinMaker(columnIndex2,columnIndex1, header1.length, header2.length, mode)(Source.fromFile(sorted2).getLines().map(_.split(',')), sorted1, 0)
+            joinMaker(columnIndex2,columnIndex1, header1.length, header2.length, mode)(getIterator(sorted2), sorted1, 0)
         }
       }
     }
@@ -66,7 +67,7 @@ object Join {
         //we iterate first file line by line 
         val line1 = iter1.next()  
         // for each line we have to create new iterator in second file, but we can drop first n lines, knowing that the file is sorted
-        val iter2 = Source.fromFile(file2).getLines().map(_.split(',')).drop(n)
+        val iter2 = getIterator(file2).drop(n)
         if(iter2.hasNext) {
           var line2 = iter2.next()
           //while the lines are matching on given column, we join them and print them
