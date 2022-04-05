@@ -6,10 +6,26 @@ import scala.collection.mutable.PriorityQueue
 
 
 object Join {
+  /** Creates iterator from file
+    * @param file - name of file
+    * @return Iterator of lines as arrays of strings
+  */
   def getIterator(file: String): Iterator[Array[String]] = Source.fromFile(file).getLines().map(_.split(','))
+  
+  /** Index of column to join on
+    * @param header - header from file
+    * @param column - name of column to join on
+    * @return Index of column in header or -1 if not found
+  */
   def getColumnIndex(header: Array[String], column: String): Int = 
     header.indexOf(column)
   
+  /** Joins two files on column `column` and prints result file to stdout
+    * @param file1 - name of the first file
+    * @param file2 - name of the second file
+    * @param column - name of column to join on
+    * @param mode - type of join: 0 - inner, 1 - left, 2 - right
+  */  
   def join(file1: String, file2: String, column: String, mode: Int): Unit = {
     val f1 = new File(file1)
     val f2 = new File(file2)
@@ -36,6 +52,9 @@ object Join {
     else { println("File does not exist")}
   }
 
+  /** Creates join function and runs it.
+    * Called by join function.
+  */
   def joinMaker(columnIndex1: Int, columnIndex2: Int, hl1: Int, hl2: Int, mode: Int)(iter1: Iterator[Array[String]], file2: File, n: Int):Unit = {
     def fun(iter1: Iterator[Array[String]], file2: File, n: Int): Unit = {
       if (iter1.hasNext) {
@@ -79,9 +98,19 @@ object Join {
 }
 
 object Sort {
+  /** Sorts single chunk of data by column
+    * @param chunk - chunk of data to sort
+    * @param column - index of column to sort on
+    * @return Sorted chunk
+  */
   def sortChunk(chunk: List[Array[String]], column: Int): List[Array[String]] =
     chunk.sortBy(_(column))
-
+  
+  /** Writes data to temporary file
+    * @param data - ready to write data
+    * @param prefix - prefix of filename
+    * @return File with saved data
+  */
   def writeToTempFile(data: List[String], prefix: String): File = {
     val file = File.createTempFile(s"$prefix", ".tmp")
     file.deleteOnExit()
@@ -92,7 +121,13 @@ object Sort {
     bw.close()
     file
   }
-
+  
+  /** Sorts chunks of data by `columnIndex` and writes them to temporary files
+    * @param chunks - iterator of chunks with data to sort
+    * @param columnIndex - index of column to sort on
+    * @param file - prefix for temporary files names
+    * @return List of temporary files with sorted data
+  */
   def sortAndWrite(chunks: Iterator[Seq[Array[String]]], columnIndex: Int, file: String): List[File] = {
     val tempFiles = for {
       (chunk, n) <- chunks.zipWithIndex
@@ -103,15 +138,33 @@ object Sort {
     tempFiles.toList
   }
 
+  /** Gets an iterator from each file in `files`
+    * @param files - list of files in csv format
+    * @return List of iterators from each file, with lines as arrays of strings
+  */
   def mergeIterators(files: List[File]): List[Iterator[Array[String]]] = 
     files.map(Source.fromFile(_).getLines().map(_.split(','))).filter(_.nonEmpty)
   
+  /** Performs K - Merge sort on iterators, creating single sorted iterator
+    * @param iterators - list of sorted iterators
+    * @param columnIndex - index of column to sort on
+    * @return Single sorted iterator with data from `iterators`
+  */
   def kMerge(iterators: List[Iterator[Array[String]]], columnIndex: Int): Iterator[Array[String]] = {
     val ordering: Ordering[(Array[String], Iterator[Array[String]])] = 
       Ordering.by((pair:(Array[String], Iterator[Array[String]])) => pair._1(columnIndex)).reverse
     KMerge.merge(KMerge.createQueue(iterators, ordering))
   }
 
+  /** Sorts data `iter` from `file` on `columnIndex`, with configurable size of chunk, default=1000000.
+   * First, divides data into chunks, then sorts them separately, and saves them to temporary files.
+   * Using K - Merge algorithm merges sorted files into single sorted file.
+    * @param iter - data to be sorted
+    * @param file - name of file
+    * @param columnIndex - index of column to sort on
+    * @param size - size of chunk, default=1000000
+    * @return Sorted temporary file
+  */
   def createSortedFile(iter: Iterator[Array[String]], file: String, columnIndex: Int, size: Int = 1000000): File = {
     val chunks = iter.grouped(1000000)
     val tempFiles: List[File] = sortAndWrite(chunks, columnIndex, file)
@@ -133,6 +186,11 @@ object Sort {
 }
 
 object KMerge {
+  /** Creates priority queue for k-merge
+    * @param iterators - list of iterators to merge
+    * @param ordering - ordering to use for queue
+    * @return PriorityQueue
+  */
   def createQueue(iterators: List[Iterator[Array[String]]], 
                   ordering: Ordering[(Array[String], Iterator[Array[String]])]
                   ): PriorityQueue[(Array[String], Iterator[Array[String]])] = {
@@ -144,6 +202,10 @@ object KMerge {
     } heap.enqueue((head, iterator))
     heap
   }
+  /** Merges iterators using priority queue `queue` into single iterator
+    * @param queue - priority queue with iterators to merge and their first elements
+    * @return Single sorted iterator
+  */
   def merge(queue: PriorityQueue[(Array[String], Iterator[Array[String]])]): Iterator[Array[String]] = {
     new Iterator[Array[String]] {
       val q = queue
